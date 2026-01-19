@@ -1,0 +1,55 @@
+{
+  "name": "spot-price-monitor",
+  "version": "1.0.0",
+  "description": "Czech electricity spot price monitor for macOS menu bar",
+  "main": "dist/main/main.js",
+  "author": "Spot Monitor",
+  "license": "MIT",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
+    "dev:vite": "vite",
+    "dev:electron": "wait-on http://localhost:5173 && tsc -p tsconfig.main.json && electron .",
+    "build": "npm run build:vite && npm run build:electron",
+    "build:vite": "vite build",
+    "build:electron": "tsc -p tsconfig.main.json",
+    "package": "npm run build && electron-builder",
+    "package:mac": "npm run build && electron-builder --mac"
+  },
+  "build": {
+    "appId": "com.spotmonitor.app",
+    "productName": "Spot Monitor",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "assets/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.utilities",
+      "icon": "assets/icon.png",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    }
+  },
+  "dependencies": {
+    "chart.js": "^4.5.1",
+    "date-fns": "^4.1.0",
+    "electron": "^40.0.0",
+    "electron-builder": "^26.4.0",
+    "react": "^19.2.3",
+    "react-chartjs-2": "^5.3.1",
+    "react-dom": "^19.2.3"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.8",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.2",
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "wait-on": "^9.0.3"
+  }
+}
