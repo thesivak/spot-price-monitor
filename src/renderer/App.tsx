@@ -4,12 +4,14 @@ import CurrentPrice from './components/CurrentPrice';
 import PriceChart from './components/PriceChart';
 import PriceStats from './components/PriceStats';
 import Header from './components/Header';
+import Settings from './components/Settings';
 
 function App() {
   const [currentPrice, setCurrentPrice] = useState<PriceData | null>(null);
   const [hourlyPrices, setHourlyPrices] = useState<HourlyPrices | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -55,37 +57,61 @@ function App() {
     window.electronAPI.closeWindow();
   };
 
+  const handleQuit = () => {
+    window.electronAPI.quitApp();
+  };
+
+  const handleSettingsChange = () => {
+    // Refresh data after settings change
+    fetchData();
+  };
+
   return (
     <div className="app-container">
       <div className="app-frame">
         <div className="scanlines" />
         <div className="grid-overlay" />
 
-        <Header onClose={handleClose} onRefresh={fetchData} isLoading={isLoading} />
+        <Header
+          onClose={handleClose}
+          onRefresh={fetchData}
+          onSettings={() => setShowSettings(true)}
+          onQuit={handleQuit}
+          isLoading={isLoading}
+        />
 
-        <main className="main-content">
-          <CurrentPrice data={currentPrice} lastUpdate={lastUpdate} />
+        {showSettings ? (
+          <Settings
+            onClose={() => setShowSettings(false)}
+            onSettingsChange={handleSettingsChange}
+          />
+        ) : (
+          <>
+            <main className="main-content">
+              <CurrentPrice data={currentPrice} lastUpdate={lastUpdate} />
 
-          <div className="section-divider">
-            <span className="divider-label">HOURLY RATES</span>
-            <div className="divider-line" />
-          </div>
+              <div className="section-divider">
+                <span className="divider-label">HOURLY RATES</span>
+                <div className="divider-line" />
+              </div>
 
-          <PriceChart data={hourlyPrices} currentHour={new Date().getHours()} />
+              <PriceChart data={hourlyPrices} currentHour={new Date().getHours()} />
 
-          <PriceStats data={hourlyPrices} />
-        </main>
+              <PriceStats data={hourlyPrices} />
+            </main>
 
-        <footer className="app-footer">
-          <div className="footer-grid">
-            <span className="footer-label">SRC</span>
-            <span className="footer-value">OTE.CZ</span>
-          </div>
-          <div className="footer-badge">
-            <span className="pulse-dot" />
-            <span>LIVE</span>
-          </div>
-        </footer>
+            <footer className="app-footer">
+              <div className="footer-grid">
+                <span className="footer-label">SRC</span>
+                <span className="footer-value">OTE.CZ</span>
+              </div>
+              <div className="footer-badge">
+                <span className="pulse-dot" />
+                <span>LIVE</span>
+              </div>
+            </footer>
+          </>
+        )}
       </div>
     </div>
   );

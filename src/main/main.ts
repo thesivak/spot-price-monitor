@@ -2,7 +2,6 @@ import {
   app,
   BrowserWindow,
   Tray,
-  Menu,
   nativeImage,
   NativeImage,
   Notification,
@@ -27,23 +26,8 @@ function getLoginItemSettings() {
 function setAutoLaunch(enable: boolean) {
   app.setLoginItemSettings({
     openAtLogin: enable,
-    openAsHidden: true, // Start minimized to tray
+    openAsHidden: true,
   });
-}
-
-function createTrayIcon(level: string, price: number): NativeImage {
-  // Create a simple text-based tray icon showing current price
-  const canvas = `
-    <svg width="22" height="22" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="11" cy="11" r="10" fill="${getLevelColor(level)}" opacity="0.9"/>
-      <text x="11" y="15" font-family="system-ui" font-size="9" font-weight="bold" fill="white" text-anchor="middle">
-        ${Math.round(price / 100)}
-      </text>
-    </svg>
-  `;
-
-  const buffer = Buffer.from(canvas);
-  return nativeImage.createFromBuffer(buffer);
 }
 
 function getLevelColor(level: string): string {
@@ -55,18 +39,34 @@ function getLevelColor(level: string): string {
   }
 }
 
-function createWindow() {
-  const { width: screenWidth } = screen.getPrimaryDisplay().workAreaSize;
+function getAssetPath(assetName: string): string {
+  if (isDev) {
+    return path.join(__dirname, '../../assets', assetName);
+  }
+  // In packaged app, assets are in the resources folder
+  return path.join(process.resourcesPath, 'assets', assetName);
+}
 
+function getRendererPath(): string {
+  if (isDev) {
+    return 'http://localhost:5173';
+  }
+  // In packaged app, renderer is in the dist/renderer folder
+  return path.join(__dirname, '../renderer/index.html');
+}
+
+function createWindow() {
   mainWindow = new BrowserWindow({
     width: 420,
-    height: 580,
+    height: 620,
     show: false,
     frame: false,
     resizable: false,
     transparent: true,
     alwaysOnTop: true,
     skipTaskbar: true,
+    vibrancy: 'under-window',
+    visualEffectState: 'active',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -76,6 +76,7 @@ function createWindow() {
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
+    // Uncomment to open devtools
     // mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
@@ -86,22 +87,50 @@ function createWindow() {
       mainWindow.hide();
     }
   });
+
+  // Log any load errors
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error('Failed to load:', errorCode, errorDescription);
+  });
 }
 
-function positionWindow() {
+function showWindow() {
   if (!mainWindow || !tray) return;
 
   const trayBounds = tray.getBounds();
   const windowBounds = mainWindow.getBounds();
+  const { width: screenWidth } = screen.getPrimaryDisplay().workAreaSize;
 
-  // Position window below the tray icon
-  const x = Math.round(trayBounds.x + trayBounds.width / 2 - windowBounds.width / 2);
+  // Position window below the tray icon, centered
+  let x = Math.round(trayBounds.x + trayBounds.width / 2 - windowBounds.width / 2);
   const y = Math.round(trayBounds.y + trayBounds.height + 4);
 
+  // Make sure window doesn't go off screen
+  if (x + windowBounds.width > screenWidth) {
+    x = screenWidth - windowBounds.width - 10;
+  }
+  if (x < 10) {
+    x = 10;
+  }
+
   mainWindow.setPosition(x, y, false);
+  mainWindow.show();
+  mainWindow.focus();
 }
 
-function showNotification(title: string, body: string, level: string) {
+function hideWindow() {
+  mainWindow?.hide();
+}
+
+function toggleWindow() {
+  if (mainWindow?.isVisible()) {
+    hideWindow();
+  } else {
+    showWindow();
+  }
+}
+
+function showNotification(title: string, body: string) {
   if (Notification.isSupported()) {
     const notification = new Notification({
       title,
@@ -115,25 +144,23 @@ function showNotification(title: string, body: string, level: string) {
 function updateTray(data: PriceData) {
   if (!tray) return;
 
-  const priceKc = Math.round(data.priceCZK / 10) / 100; // Convert to Kč (thousands)
-  const levelText = data.level === 'low' ? '🟢 LOW' : data.level === 'high' ? '🔴 HIGH' : '🟡 MED';
+  const priceKc = Math.round(data.priceCZK / 10) / 100;
+  const levelText = data.level === 'low' ? 'LOW' : data.level === 'high' ? 'HIGH' : 'MED';
 
   tray.setTitle(` ${priceKc.toFixed(1)}`);
-  tray.setToolTip(`Spot Price: ${data.priceCZK} Kč/MWh (${levelText})`);
+  tray.setToolTip(`Spot Price: ${data.priceCZK} Kč/MWh (${levelText})\nClick to view details`);
 
   // Send notification on level change
   if (lastNotifiedLevel !== data.level) {
     if (data.level === 'low' && lastNotifiedLevel !== null) {
       showNotification(
         '⚡ Low Electricity Price!',
-        `Current price: ${data.priceCZK} Kč/MWh - Great time to use power!`,
-        data.level
+        `Current price: ${data.priceCZK} Kč/MWh - Great time to use power!`
       );
     } else if (data.level === 'high' && lastNotifiedLevel !== null) {
       showNotification(
         '⚡ High Electricity Price',
-        `Current price: ${data.priceCZK} Kč/MWh - Consider reducing usage`,
-        data.level
+        `Current price: ${data.priceCZK} Kč/MWh - Consider reducing usage`
       );
     }
     lastNotifiedLevel = data.level;
@@ -141,8 +168,7 @@ function updateTray(data: PriceData) {
 }
 
 function createTray() {
-  // Create a simple colored circle as default icon
-  const iconPath = path.join(__dirname, '../../assets/tray-icon.png');
+  const iconPath = getAssetPath('tray-icon.png');
   let icon: NativeImage;
 
   try {
@@ -150,67 +176,26 @@ function createTray() {
     if (icon.isEmpty()) {
       throw new Error('Icon is empty');
     }
-  } catch {
-    // Create a default icon if file doesn't exist
+    // Resize for macOS menu bar (should be 22x22 or 16x16)
+    icon = icon.resize({ width: 18, height: 18 });
+  } catch (e) {
+    console.error('Failed to load tray icon:', e);
+    // Create a fallback icon
     icon = nativeImage.createEmpty();
   }
 
   tray = new Tray(icon);
   tray.setTitle(' --');
+  tray.setToolTip('Spot Monitor - Click to view prices');
 
-  const buildContextMenu = () => {
-    const loginSettings = getLoginItemSettings();
-    return Menu.buildFromTemplate([
-      {
-        label: 'Show Prices',
-        click: () => {
-          if (mainWindow) {
-            positionWindow();
-            mainWindow.show();
-            mainWindow.focus();
-          }
-        },
-      },
-      { type: 'separator' },
-      {
-        label: 'Refresh',
-        click: () => {
-          priceService.fetchCurrentPrice();
-          priceService.fetchHourlyPrices();
-        },
-      },
-      { type: 'separator' },
-      {
-        label: 'Start at Login',
-        type: 'checkbox',
-        checked: loginSettings.openAtLogin,
-        click: (menuItem) => {
-          setAutoLaunch(menuItem.checked);
-          tray?.setContextMenu(buildContextMenu());
-        },
-      },
-      { type: 'separator' },
-      {
-        label: 'Quit',
-        click: () => {
-          app.quit();
-        },
-      },
-    ]);
-  };
-
-  tray.setContextMenu(buildContextMenu());
-
+  // Left click toggles the window - NO context menu
   tray.on('click', () => {
-    if (mainWindow) {
-      if (mainWindow.isVisible()) {
-        mainWindow.hide();
-      } else {
-        positionWindow();
-        mainWindow.show();
-        mainWindow.focus();
-      }
-    }
+    toggleWindow();
+  });
+
+  // Right click also toggles (no menu)
+  tray.on('right-click', () => {
+    toggleWindow();
   });
 }
 
@@ -234,8 +219,26 @@ function setupIPC() {
     };
   });
 
+  ipcMain.handle('get-settings', () => {
+    return {
+      ...priceService.getSettings(),
+      startAtLogin: getLoginItemSettings().openAtLogin,
+    };
+  });
+
+  ipcMain.handle('update-settings', (_event, newSettings) => {
+    if (newSettings.startAtLogin !== undefined) {
+      setAutoLaunch(newSettings.startAtLogin);
+    }
+    return priceService.updateSettings(newSettings);
+  });
+
   ipcMain.on('close-window', () => {
-    mainWindow?.hide();
+    hideWindow();
+  });
+
+  ipcMain.on('quit-app', () => {
+    app.quit();
   });
 }
 
