@@ -207,9 +207,7 @@ function updateTray(data: PriceData) {
   const coloredIcon = createColoredIcon(data.level);
   tray.setImage(coloredIcon);
 
-  // Also add emoji to title as backup visual indicator
-  const emoji = data.level === 'low' ? '🟢' : data.level === 'high' ? '🔴' : '🟠';
-  tray.setTitle(`${emoji} ${priceKc.toFixed(1)}`);
+  tray.setTitle(` ${priceKc.toFixed(1)}`);
   tray.setToolTip(`Spot Price: ${data.priceCZK} Kč/MWh (${levelText})\nClick to view details`);
 
   // Send notification on level change
