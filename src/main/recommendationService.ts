@@ -55,18 +55,18 @@ export class RecommendationService {
       return this.currentState;
     }
 
-    // Calculate daily average for comparison
+    // Calculate daily stats for comparison
     const dailyAverage = this.calculateDailyAverage(hourlyPrices.hoursToday);
-    const pricePerKwh = price.priceCZK / 1000; // Convert to kWh
+    const dailyMin = this.calculateDailyMin(hourlyPrices.hoursToday);
 
     // Check EV charging recommendation
-    const evRecommendation = this.getEvChargingRecommendation(price, dailyAverage, sun);
+    const evRecommendation = this.getEvChargingRecommendation(price, dailyAverage, dailyMin, sun);
     if (evRecommendation) {
       recommendations.push(evRecommendation);
     }
 
     // Check laundry recommendation
-    const laundryRecommendation = this.getLaundryRecommendation(price, dailyAverage, sun, hourlyPrices);
+    const laundryRecommendation = this.getLaundryRecommendation(price, dailyAverage, dailyMin, sun, hourlyPrices);
     if (laundryRecommendation) {
       recommendations.push(laundryRecommendation);
     }
@@ -94,7 +94,7 @@ export class RecommendationService {
     }
 
     // Find next good window
-    const nextWindow = this.findNextGoodWindow(hourlyPrices, sun, dailyAverage);
+    const nextWindow = this.findNextGoodWindow(hourlyPrices, sun, dailyMin);
 
     this.currentState = {
       recommendations,
@@ -113,53 +113,61 @@ export class RecommendationService {
     return sum / hours.length;
   }
 
+  private calculateDailyMin(hours: HourlyPrice[]): number {
+    if (hours.length === 0) return 0;
+    return Math.min(...hours.map((h) => h.priceCZK));
+  }
+
+  // Check if current price is near the daily minimum (within tolerance)
+  private isNearLowestPrice(currentPrice: number, dailyMin: number, tolerance: number = 0.15): boolean {
+    if (dailyMin === 0) return false;
+    // Price is "near lowest" if it's within tolerance% of the minimum
+    return currentPrice <= dailyMin * (1 + tolerance);
+  }
+
   private getEvChargingRecommendation(
     price: PriceData,
     dailyAverage: number,
+    dailyMin: number,
     sun: SunForecast | null
   ): Recommendation | null {
-    const isLowPrice = price.level === 'low';
-    const isBelowAverage = price.priceCZK < dailyAverage * 0.8; // 20% below average
+    // Stricter: only recommend if price is near the daily minimum (within 15%)
+    const isNearLowest = this.isNearLowestPrice(price.priceCZK, dailyMin, 0.15);
+    const isVeryNearLowest = this.isNearLowestPrice(price.priceCZK, dailyMin, 0.05);
     const isSunny = sun && sun.generationPotential !== 'low' && sun.isDaytime;
     const isHighSolar = sun && sun.currentIrradiance > 500;
 
-    // Excellent: Low price + high solar
-    if (isLowPrice && isHighSolar) {
+    // Excellent: Very near lowest price + high solar
+    if (isVeryNearLowest && isHighSolar) {
       return {
         activity: 'ev_charging',
         quality: 'excellent',
-        reason: 'Low price + sunny',
+        reason: 'Lowest price + sunny',
         icon: '🚗',
         windowEnd: this.estimateWindowEnd(sun),
       };
     }
 
-    // Good: Low price (any solar) or high solar (any price)
-    if (isLowPrice) {
+    // Good: Near lowest price (within 15%)
+    if (isNearLowest) {
+      const pctAboveMin = Math.round((price.priceCZK / dailyMin - 1) * 100);
+      const reason = pctAboveMin <= 2
+        ? 'Lowest price of the day'
+        : `${pctAboveMin}% above daily low`;
       return {
         activity: 'ev_charging',
         quality: 'good',
-        reason: `Price ${Math.round((1 - price.priceCZK / dailyAverage) * 100)}% below avg`,
+        reason,
         icon: '🚗',
       };
     }
 
-    if (isHighSolar && isBelowAverage) {
+    // Good: High solar + below average (even if not near lowest)
+    if (isHighSolar && price.priceCZK < dailyAverage) {
       return {
         activity: 'ev_charging',
         quality: 'good',
         reason: 'High solar generation',
-        icon: '🚗',
-        windowEnd: this.estimateWindowEnd(sun),
-      };
-    }
-
-    // Okay: Sunny and not high price
-    if (isSunny && price.level !== 'high') {
-      return {
-        activity: 'ev_charging',
-        quality: 'okay',
-        reason: 'Solar available',
         icon: '🚗',
         windowEnd: this.estimateWindowEnd(sun),
       };
@@ -171,42 +179,44 @@ export class RecommendationService {
   private getLaundryRecommendation(
     price: PriceData,
     dailyAverage: number,
+    dailyMin: number,
     sun: SunForecast | null,
     hourlyPrices: HourlyPrices
   ): Recommendation | null {
-    const isBelowAverage = price.priceCZK < dailyAverage;
-    const isLowPrice = price.level === 'low';
+    // Stricter: only recommend if price is near the daily minimum
+    const isNearLowest = this.isNearLowestPrice(price.priceCZK, dailyMin, 0.15);
+    const isVeryNearLowest = this.isNearLowestPrice(price.priceCZK, dailyMin, 0.05);
     const isSunny = sun && sun.currentIrradiance > 300 && sun.isDaytime;
 
     // Check if price is stable for next 2 hours (for laundry cycle)
     const isStable = this.isPriceStable(hourlyPrices, 2);
 
-    // Excellent: Low price + sunny + stable
-    if (isLowPrice && isSunny && isStable) {
+    // Excellent: Very near lowest price + sunny + stable
+    if (isVeryNearLowest && isSunny && isStable) {
       return {
         activity: 'laundry',
         quality: 'excellent',
-        reason: 'Low price + sunny',
+        reason: 'Lowest price + sunny',
         icon: '🧺',
       };
     }
 
-    // Good: Below average + (sunny OR stable low)
-    if (isBelowAverage && (isSunny || (isLowPrice && isStable))) {
+    // Good: Near lowest price + stable
+    if (isNearLowest && isStable) {
       return {
         activity: 'laundry',
         quality: 'good',
-        reason: isSunny ? 'Good solar' : 'Stable low price',
+        reason: 'Near lowest price',
         icon: '🧺',
       };
     }
 
-    // Okay: Just below average and not high price
-    if (isBelowAverage && price.level !== 'high' && isStable) {
+    // Good: High solar + below average
+    if (isSunny && price.priceCZK < dailyAverage && isStable) {
       return {
         activity: 'laundry',
-        quality: 'okay',
-        reason: 'Below average price',
+        quality: 'good',
+        reason: 'Good solar',
         icon: '🧺',
       };
     }
@@ -256,13 +266,13 @@ export class RecommendationService {
   private findNextGoodWindow(
     hourlyPrices: HourlyPrices,
     sun: SunForecast | null,
-    dailyAverage: number
+    dailyMin: number
   ): { time: string; reason: string } | undefined {
     const currentHour = new Date().getHours();
 
-    // Look for next low price window
+    // Look for next window near the daily minimum (within 15%)
     for (const hour of hourlyPrices.hoursToday) {
-      if (hour.hour > currentHour && hour.level === 'low') {
+      if (hour.hour > currentHour && this.isNearLowestPrice(hour.priceCZK, dailyMin, 0.15)) {
         return {
           time: `${hour.hour.toString().padStart(2, '0')}:00`,
           reason: 'Price drops',
@@ -270,13 +280,16 @@ export class RecommendationService {
       }
     }
 
-    // Check tomorrow
-    for (const hour of hourlyPrices.hoursTomorrow) {
-      if (hour.level === 'low') {
-        return {
-          time: `${hour.hour.toString().padStart(2, '0')}:00 tomorrow`,
-          reason: 'Low price window',
-        };
+    // Check tomorrow - find the minimum price hour
+    if (hourlyPrices.hoursTomorrow.length > 0) {
+      const tomorrowMin = this.calculateDailyMin(hourlyPrices.hoursTomorrow);
+      for (const hour of hourlyPrices.hoursTomorrow) {
+        if (this.isNearLowestPrice(hour.priceCZK, tomorrowMin, 0.05)) {
+          return {
+            time: `${hour.hour.toString().padStart(2, '0')}:00 tomorrow`,
+            reason: 'Lowest price',
+          };
+        }
       }
     }
 

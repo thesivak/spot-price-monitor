@@ -104,30 +104,28 @@ function App() {
         ) : (
           <>
             <main className="main-content">
-              <Recommendations data={recommendations} />
-
-              <CurrentPrice data={currentPrice} lastUpdate={lastUpdate} />
-
-              <SunForecastComponent data={sunForecast} />
-
-              <div className="section-divider">
-                <span className="divider-label">HOURLY RATES</span>
-                <div className="divider-line" />
+              <div className="left-column">
+                <Recommendations data={recommendations} />
+                <CurrentPrice data={currentPrice} lastUpdate={lastUpdate} />
+                <SunForecastComponent data={sunForecast} />
               </div>
 
-              <PriceChart data={hourlyPrices} currentHour={new Date().getHours()} />
-
-              <PriceStats data={hourlyPrices} />
+              <div className="right-column">
+                <PriceChart data={hourlyPrices} currentHour={new Date().getHours()} />
+              </div>
             </main>
 
             <footer className="app-footer">
-              <div className="footer-grid">
-                <span className="footer-label">SRC</span>
-                <span className="footer-value">OTE.CZ</span>
-              </div>
-              <div className="footer-badge">
-                <span className="pulse-dot" />
-                <span>LIVE</span>
+              <PriceStats data={hourlyPrices} />
+              <div className="footer-status">
+                <div className="footer-grid">
+                  <span className="footer-label">SRC</span>
+                  <span className="footer-value">OTE.CZ</span>
+                </div>
+                <div className="footer-badge">
+                  <span className="pulse-dot" />
+                  <span>LIVE</span>
+                </div>
               </div>
             </footer>
           </>

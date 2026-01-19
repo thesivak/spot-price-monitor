@@ -92,28 +92,6 @@ const PriceStats: FC<PriceStatsProps> = ({ data }) => {
         </div>
       </div>
 
-      {stats.cheapHours.length > 0 && (
-        <div className="best-hours">
-          <span className="best-hours-label">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26" />
-            </svg>
-            BEST HOURS TODAY
-          </span>
-          <div className="best-hours-list">
-            {stats.cheapHours.map((hour) => (
-              <div key={hour.hour} className="best-hour-chip">
-                <span className="best-hour-time">
-                  {hour.hour.toString().padStart(2, '0')}:00
-                </span>
-                <span className="best-hour-price">
-                  {(hour.priceCZK / 1000).toFixed(2)} Kč
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 };

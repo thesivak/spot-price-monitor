@@ -63,11 +63,12 @@ function getRendererPath(): string {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 420,
-    height: 850,
+    width: 820,
+    height: 540,
     show: false,
     frame: false,
     resizable: false,
+    movable: false,
     transparent: true,
     alwaysOnTop: true,
     skipTaskbar: true,
@@ -240,7 +241,7 @@ function updateTray(data: PriceData) {
   const coloredIcon = createColoredIcon(iconLevel);
   tray.setImage(coloredIcon);
 
-  tray.setTitle(` ${priceKc.toFixed(1)}`);
+  tray.setTitle(` ${priceKc.toFixed(2)} Kč`);
   tray.setToolTip(tooltip);
 
   // Send contextual notifications

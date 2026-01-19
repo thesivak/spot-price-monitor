@@ -44,7 +44,17 @@ const PriceChart: FC<PriceChartProps> = ({ data, currentHour }) => {
     }
 
     const getColor = (level: string, isCurrentHour: boolean) => {
-      if (isCurrentHour) return 'rgba(255, 200, 87, 1)';
+      // Current hour gets a bright white/yellow highlight
+      if (isCurrentHour) {
+        switch (level) {
+          case 'low':
+            return 'rgba(134, 239, 172, 1)'; // Brighter green
+          case 'high':
+            return 'rgba(252, 129, 129, 1)'; // Brighter red
+          default:
+            return 'rgba(253, 224, 71, 1)'; // Brighter yellow
+        }
+      }
       switch (level) {
         case 'low':
           return 'rgba(34, 197, 94, 0.85)';
@@ -56,7 +66,8 @@ const PriceChart: FC<PriceChartProps> = ({ data, currentHour }) => {
     };
 
     const getBorderColor = (level: string, isCurrentHour: boolean) => {
-      if (isCurrentHour) return 'rgba(255, 200, 87, 1)';
+      // Current hour gets white border for visibility
+      if (isCurrentHour) return 'rgba(255, 255, 255, 1)';
       switch (level) {
         case 'low':
           return 'rgba(34, 197, 94, 1)';
@@ -75,9 +86,9 @@ const PriceChart: FC<PriceChartProps> = ({ data, currentHour }) => {
           {
             label: 'Today',
             data: todayData.map((h) => h.priceCZK / 1000),
-            backgroundColor: todayData.map((h, i) => getColor(h.level, i === currentHour)),
-            borderColor: todayData.map((h, i) => getBorderColor(h.level, i === currentHour)),
-            borderWidth: todayData.map((_, i) => (i === currentHour ? 2 : 1)),
+            backgroundColor: todayData.map((h) => getColor(h.level, h.hour === currentHour)),
+            borderColor: todayData.map((h) => getBorderColor(h.level, h.hour === currentHour)),
+            borderWidth: todayData.map((h) => (h.hour === currentHour ? 3 : 1)),
             borderRadius: 3,
             barPercentage: 0.85,
           },
@@ -103,12 +114,21 @@ const PriceChart: FC<PriceChartProps> = ({ data, currentHour }) => {
       };
     }
 
-    // Both days
-    const allHours = [...data.hoursToday, ...data.hoursTomorrow];
+    // Both days - only today's hours can be current
     const labels = [
       ...data.hoursToday.map((h) => `${h.hour.toString().padStart(2, '0')}:00`),
       ...data.hoursTomorrow.map((h) => `+${h.hour.toString().padStart(2, '0')}`),
     ];
+
+    const todayWithCurrent = data.hoursToday.map((h) => ({
+      ...h,
+      isCurrent: h.hour === currentHour,
+    }));
+    const tomorrowNoCurrent = data.hoursTomorrow.map((h) => ({
+      ...h,
+      isCurrent: false,
+    }));
+    const allHours = [...todayWithCurrent, ...tomorrowNoCurrent];
 
     return {
       labels,
@@ -116,9 +136,9 @@ const PriceChart: FC<PriceChartProps> = ({ data, currentHour }) => {
         {
           label: 'Price',
           data: allHours.map((h) => h.priceCZK / 1000),
-          backgroundColor: allHours.map((h, i) => getColor(h.level, i === currentHour)),
-          borderColor: allHours.map((h, i) => getBorderColor(h.level, i === currentHour)),
-          borderWidth: allHours.map((_, i) => (i === currentHour ? 2 : 1)),
+          backgroundColor: allHours.map((h) => getColor(h.level, h.isCurrent)),
+          borderColor: allHours.map((h) => getBorderColor(h.level, h.isCurrent)),
+          borderWidth: allHours.map((h) => (h.isCurrent ? 3 : 1)),
           borderRadius: 2,
           barPercentage: 0.9,
         },
