@@ -142,11 +142,28 @@ function showNotification(title: string, body: string) {
   }
 }
 
+function createColoredIcon(level: string): NativeImage {
+  const color = getLevelColor(level);
+  // Create SVG icon with the appropriate color
+  const svg = `<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="16" cy="16" r="14" fill="${color}"/>
+    <path d="M18 6L10 18h6l-2 10 8-12h-6l2-10z" fill="white" stroke="white" stroke-width="0.5" stroke-linejoin="round"/>
+  </svg>`;
+  const base64 = Buffer.from(svg).toString('base64');
+  let icon = nativeImage.createFromDataURL(`data:image/svg+xml;base64,${base64}`);
+  icon = icon.resize({ width: 18, height: 18 });
+  return icon;
+}
+
 function updateTray(data: PriceData) {
   if (!tray) return;
 
   const priceKc = Math.round(data.priceCZK / 10) / 100;
   const levelText = data.level === 'low' ? 'LOW' : data.level === 'high' ? 'HIGH' : 'MED';
+
+  // Update icon color based on price level
+  const coloredIcon = createColoredIcon(data.level);
+  tray.setImage(coloredIcon);
 
   tray.setTitle(` ${priceKc.toFixed(1)}`);
   tray.setToolTip(`Spot Price: ${data.priceCZK} Kč/MWh (${levelText})\nClick to view details`);
@@ -169,40 +186,12 @@ function updateTray(data: PriceData) {
 }
 
 function createTray() {
-  let icon: NativeImage;
-
-  try {
-    // Try loading @2x version for Retina displays
-    const icon2xPath = getAssetPath('tray-icon@2x.png');
-    const icon1xPath = getAssetPath('tray-icon.png');
-
-    console.log('Trying to load icon from:', icon2xPath);
-    icon = nativeImage.createFromPath(icon2xPath);
-
-    if (icon.isEmpty()) {
-      console.log('2x icon empty, trying 1x:', icon1xPath);
-      icon = nativeImage.createFromPath(icon1xPath);
-    }
-
-    if (icon.isEmpty()) {
-      throw new Error('Both icon paths returned empty images');
-    }
-
-    // Resize for macOS menu bar (template image at 16x16 or 18x18)
-    icon = icon.resize({ width: 16, height: 16 });
-    icon.setTemplateImage(true); // Makes it work with dark/light menu bar
-  } catch (e) {
-    console.error('Failed to load tray icon:', e);
-    // Create a simple fallback icon using data URL
-    const fallbackSvg = `<svg width="16" height="16" xmlns="http://www.w3.org/2000/svg"><circle cx="8" cy="8" r="7" fill="#ffc857"/><path d="M9 3L5 9h3l-1 5 4-6H8l1-5z" fill="#000"/></svg>`;
-    const base64 = Buffer.from(fallbackSvg).toString('base64');
-    icon = nativeImage.createFromDataURL(`data:image/svg+xml;base64,${base64}`);
-    icon = icon.resize({ width: 16, height: 16 });
-  }
+  // Start with amber/loading icon
+  const icon = createColoredIcon('unknown');
 
   tray = new Tray(icon);
   tray.setTitle(' --');
-  tray.setToolTip('Spot Monitor - Click to view prices');
+  tray.setToolTip('Spot Monitor - Loading prices...');
 
   // Left click toggles the window - NO context menu
   tray.on('click', () => {
