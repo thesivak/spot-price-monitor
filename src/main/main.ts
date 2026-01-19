@@ -143,16 +143,58 @@ function showNotification(title: string, body: string) {
 }
 
 function createColoredIcon(level: string): NativeImage {
-  const color = getLevelColor(level);
-  // Create SVG icon with the appropriate color
-  const svg = `<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="16" cy="16" r="14" fill="${color}"/>
-    <path d="M18 6L10 18h6l-2 10 8-12h-6l2-10z" fill="white" stroke="white" stroke-width="0.5" stroke-linejoin="round"/>
-  </svg>`;
-  const base64 = Buffer.from(svg).toString('base64');
-  let icon = nativeImage.createFromDataURL(`data:image/svg+xml;base64,${base64}`);
-  icon = icon.resize({ width: 18, height: 18 });
-  return icon;
+  // Create a simple colored circle as PNG using raw pixel data
+  const size = 32;
+  const scale = 2; // For retina
+  const actualSize = size * scale;
+
+  // Parse hex color to RGB
+  const hexColor = getLevelColor(level);
+  const r = parseInt(hexColor.slice(1, 3), 16);
+  const g = parseInt(hexColor.slice(3, 5), 16);
+  const b = parseInt(hexColor.slice(5, 7), 16);
+
+  // Create RGBA buffer for a filled circle
+  const buffer = Buffer.alloc(actualSize * actualSize * 4);
+  const centerX = actualSize / 2;
+  const centerY = actualSize / 2;
+  const radius = (actualSize / 2) - 4;
+
+  for (let y = 0; y < actualSize; y++) {
+    for (let x = 0; x < actualSize; x++) {
+      const idx = (y * actualSize + x) * 4;
+      const dist = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
+
+      if (dist <= radius) {
+        // Inside the circle - use the level color
+        buffer[idx] = r;     // R
+        buffer[idx + 1] = g; // G
+        buffer[idx + 2] = b; // B
+        buffer[idx + 3] = 255; // A (fully opaque)
+      } else if (dist <= radius + 1) {
+        // Anti-aliased edge
+        const alpha = Math.max(0, 255 * (1 - (dist - radius)));
+        buffer[idx] = r;
+        buffer[idx + 1] = g;
+        buffer[idx + 2] = b;
+        buffer[idx + 3] = Math.round(alpha);
+      } else {
+        // Outside - transparent
+        buffer[idx] = 0;
+        buffer[idx + 1] = 0;
+        buffer[idx + 2] = 0;
+        buffer[idx + 3] = 0;
+      }
+    }
+  }
+
+  const icon = nativeImage.createFromBuffer(buffer, {
+    width: actualSize,
+    height: actualSize,
+    scaleFactor: scale,
+  });
+
+  return icon.resize({ width: 18, height: 18 });
 }
 
 function updateTray(data: PriceData) {
@@ -165,7 +207,9 @@ function updateTray(data: PriceData) {
   const coloredIcon = createColoredIcon(data.level);
   tray.setImage(coloredIcon);
 
-  tray.setTitle(` ${priceKc.toFixed(1)}`);
+  // Also add emoji to title as backup visual indicator
+  const emoji = data.level === 'low' ? '🟢' : data.level === 'high' ? '🔴' : '🟠';
+  tray.setTitle(`${emoji} ${priceKc.toFixed(1)}`);
   tray.setToolTip(`Spot Price: ${data.priceCZK} Kč/MWh (${levelText})\nClick to view details`);
 
   // Send notification on level change
