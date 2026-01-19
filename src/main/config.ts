@@ -286,6 +286,10 @@ export interface AppSettings {
     highPrice: boolean;
   };
   startAtLogin: boolean;
+  // Solar/Location settings
+  latitude?: number;
+  longitude?: number;
+  solarCapacityKwp?: number;
 }
 
 // Default settings

@@ -13,6 +13,9 @@ interface AppSettings {
     lowPrice: boolean;
     highPrice: boolean;
   };
+  latitude?: number;
+  longitude?: number;
+  solarCapacityKwp?: number;
 }
 
 const REGIONS = [
@@ -187,6 +190,29 @@ const Settings: FC<SettingsProps> = ({ onClose, onSettingsChange }) => {
               <span className="toggle-knob" />
             </button>
           </div>
+        </div>
+
+        <div className="settings-section">
+          <label className="settings-label">Solar Panel Setup (Optional)</label>
+          <div className="settings-input-row">
+            <span>Panel Capacity (kWp)</span>
+            <input
+              type="number"
+              className="settings-input"
+              placeholder="e.g., 6"
+              value={settings.solarCapacityKwp || ''}
+              onChange={(e) => {
+                const value = e.target.value ? parseFloat(e.target.value) : undefined;
+                updateSetting('solarCapacityKwp', value);
+              }}
+              min="0"
+              max="100"
+              step="0.5"
+            />
+          </div>
+          <p className="settings-hint">
+            Enter your solar system capacity for better generation estimates
+          </p>
         </div>
 
         <div className="settings-section settings-info">

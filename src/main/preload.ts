@@ -26,4 +26,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onHourlyUpdated: (callback: (data: any) => void) => {
     ipcRenderer.on('hourly-updated', (_event, data) => callback(data));
   },
+  // Weather/Sun API
+  getSunForecast: () => ipcRenderer.invoke('get-sun-forecast'),
+  refreshWeather: () => ipcRenderer.invoke('refresh-weather'),
+  onWeatherUpdated: (callback: (data: any) => void) => {
+    ipcRenderer.on('weather-updated', (_event, data) => callback(data));
+  },
+  // Recommendations API
+  getRecommendations: () => ipcRenderer.invoke('get-recommendations'),
+  onRecommendationsUpdated: (callback: (data: any) => void) => {
+    ipcRenderer.on('recommendations-updated', (_event, data) => callback(data));
+  },
 } as ElectronAPI);

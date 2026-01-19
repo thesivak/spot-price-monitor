@@ -1,14 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
-import { PriceData, HourlyPrices } from './types';
+import { PriceData, HourlyPrices, SunForecast, RecommendationState } from './types';
 import CurrentPrice from './components/CurrentPrice';
 import PriceChart from './components/PriceChart';
 import PriceStats from './components/PriceStats';
 import Header from './components/Header';
 import Settings from './components/Settings';
+import Recommendations from './components/Recommendations';
+import SunForecastComponent from './components/SunForecast';
 
 function App() {
   const [currentPrice, setCurrentPrice] = useState<PriceData | null>(null);
   const [hourlyPrices, setHourlyPrices] = useState<HourlyPrices | null>(null);
+  const [sunForecast, setSunForecast] = useState<SunForecast | null>(null);
+  const [recommendations, setRecommendations] = useState<RecommendationState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -30,12 +34,16 @@ function App() {
   useEffect(() => {
     // Initial data fetch
     const loadInitialData = async () => {
-      const [current, hourly] = await Promise.all([
+      const [current, hourly, sun, recs] = await Promise.all([
         window.electronAPI.getCurrentPrice(),
         window.electronAPI.getHourlyPrices(),
+        window.electronAPI.getSunForecast(),
+        window.electronAPI.getRecommendations(),
       ]);
       if (current) setCurrentPrice(current);
       if (hourly) setHourlyPrices(hourly);
+      if (sun) setSunForecast(sun);
+      if (recs) setRecommendations(recs);
       setLastUpdate(new Date());
       setIsLoading(false);
     };
@@ -50,6 +58,14 @@ function App() {
 
     window.electronAPI.onHourlyUpdated((data) => {
       setHourlyPrices(data);
+    });
+
+    window.electronAPI.onWeatherUpdated((data) => {
+      setSunForecast(data);
+    });
+
+    window.electronAPI.onRecommendationsUpdated((data) => {
+      setRecommendations(data);
     });
   }, []);
 
@@ -88,7 +104,11 @@ function App() {
         ) : (
           <>
             <main className="main-content">
+              <Recommendations data={recommendations} />
+
               <CurrentPrice data={currentPrice} lastUpdate={lastUpdate} />
+
+              <SunForecastComponent data={sunForecast} />
 
               <div className="section-divider">
                 <span className="divider-label">HOURLY RATES</span>

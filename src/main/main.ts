@@ -9,12 +9,17 @@ import {
   screen,
 } from 'electron';
 import * as path from 'path';
-import { PriceService, PriceData } from './priceService';
+import { PriceService, PriceData, HourlyPrices } from './priceService';
+import { WeatherService, SunForecast } from './weatherService';
+import { RecommendationService, RecommendationState } from './recommendationService';
 
 let tray: Tray | null = null;
 let mainWindow: BrowserWindow | null = null;
 let priceService: PriceService;
+let weatherService: WeatherService;
+let recommendationService: RecommendationService;
 let lastNotifiedLevel: string | null = null;
+let lastRecommendationStatus: string | null = null;
 
 // Use app.isPackaged as the reliable way to detect production vs development
 const isDev = !app.isPackaged;
@@ -59,7 +64,7 @@ function getRendererPath(): string {
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 420,
-    height: 620,
+    height: 850,
     show: false,
     frame: false,
     resizable: false,
@@ -201,29 +206,87 @@ function updateTray(data: PriceData) {
   if (!tray) return;
 
   const priceKc = Math.round(data.priceCZK / 10) / 100;
-  const levelText = data.level === 'low' ? 'LOW' : data.level === 'high' ? 'HIGH' : 'MED';
 
-  // Update icon color based on price level
-  const coloredIcon = createColoredIcon(data.level);
+  // Get recommendation state to determine icon/tooltip
+  const recState = recommendationService?.getCurrentState();
+  const sunForecast = weatherService?.getCurrentForecast();
+
+  // Determine tray state based on recommendations
+  let iconLevel = data.level;
+  let tooltip = `Spot Price: ${data.priceCZK} Kč/MWh`;
+
+  if (recState && recState.recommendations.length > 0) {
+    const hasEv = recState.recommendations.find((r) => r.activity === 'ev_charging');
+    const hasLaundry = recState.recommendations.find((r) => r.activity === 'laundry');
+
+    if (recState.overallStatus === 'go') {
+      iconLevel = 'low'; // Green for "go"
+      tooltip += '\n⚡ Good time for high-power activities!';
+      if (hasEv) tooltip += '\n🚗 EV charging recommended';
+      if (hasLaundry) tooltip += '\n🧺 Laundry recommended';
+    } else if (recState.overallStatus === 'okay') {
+      tooltip += '\n👍 Acceptable conditions';
+    }
+  }
+
+  if (sunForecast && sunForecast.isDaytime) {
+    const sunIcon = sunForecast.generationPotential === 'high' ? '☀️' : sunForecast.generationPotential === 'medium' ? '🌤️' : '☁️';
+    tooltip += `\n${sunIcon} Solar: ${sunForecast.generationPotential.toUpperCase()}`;
+  }
+
+  tooltip += '\nClick to view details';
+
+  // Update icon color based on recommendation state or price level
+  const coloredIcon = createColoredIcon(iconLevel);
   tray.setImage(coloredIcon);
 
   tray.setTitle(` ${priceKc.toFixed(1)}`);
-  tray.setToolTip(`Spot Price: ${data.priceCZK} Kč/MWh (${levelText})\nClick to view details`);
+  tray.setToolTip(tooltip);
 
-  // Send notification on level change
-  if (lastNotifiedLevel !== data.level) {
-    if (data.level === 'low' && lastNotifiedLevel !== null) {
+  // Send contextual notifications
+  sendContextualNotification(data, recState, sunForecast);
+}
+
+function sendContextualNotification(
+  price: PriceData,
+  recState: RecommendationState | null,
+  sun: SunForecast | null
+) {
+  const settings = priceService.getSettings();
+
+  // Check if notifications are enabled
+  if (!settings.notifications.lowPrice && !settings.notifications.highPrice) {
+    return;
+  }
+
+  // Send recommendation-based notification
+  if (recState && lastRecommendationStatus !== recState.overallStatus) {
+    if (recState.overallStatus === 'go' && lastRecommendationStatus !== null) {
+      const message = recommendationService.getNotificationMessage(price, sun);
+      if (message && settings.notifications.lowPrice) {
+        showNotification('⚡ Good Time Now!', message);
+      }
+    }
+    lastRecommendationStatus = recState.overallStatus;
+    return; // Don't send price notification if we sent recommendation notification
+  }
+
+  // Fallback to price-based notification
+  if (lastNotifiedLevel !== price.level) {
+    if (price.level === 'low' && lastNotifiedLevel !== null && settings.notifications.lowPrice) {
+      const sunInfo = sun && sun.isDaytime && sun.generationPotential !== 'low'
+        ? ' + solar available' : '';
       showNotification(
         '⚡ Low Electricity Price!',
-        `Current price: ${data.priceCZK} Kč/MWh - Great time to use power!`
+        `Current price: ${price.priceCZK} Kč/MWh${sunInfo}`
       );
-    } else if (data.level === 'high' && lastNotifiedLevel !== null) {
+    } else if (price.level === 'high' && lastNotifiedLevel !== null && settings.notifications.highPrice) {
       showNotification(
         '⚡ High Electricity Price',
-        `Current price: ${data.priceCZK} Kč/MWh - Consider reducing usage`
+        `Current price: ${price.priceCZK} Kč/MWh - Consider reducing usage`
       );
     }
-    lastNotifiedLevel = data.level;
+    lastNotifiedLevel = price.level;
   }
 }
 
@@ -260,6 +323,9 @@ function setupIPC() {
       priceService.fetchCurrentPrice(),
       priceService.fetchHourlyPrices(),
     ]);
+    // Also refresh weather and recommendations
+    await weatherService.fetchSunForecast();
+    updateRecommendations();
     return {
       current: priceService.getCurrentPrice(),
       hourly: priceService.getHourlyPrices(),
@@ -277,7 +343,28 @@ function setupIPC() {
     if (newSettings.startAtLogin !== undefined) {
       setAutoLaunch(newSettings.startAtLogin);
     }
-    return priceService.updateSettings(newSettings);
+    const updatedSettings = priceService.updateSettings(newSettings);
+    // Update weather service with new location
+    weatherService.updateLocation(updatedSettings);
+    // Refresh weather data with new location
+    weatherService.fetchSunForecast();
+    return updatedSettings;
+  });
+
+  // Weather/Sun IPC handlers
+  ipcMain.handle('get-sun-forecast', async () => {
+    return weatherService.getCurrentForecast();
+  });
+
+  ipcMain.handle('refresh-weather', async () => {
+    await weatherService.fetchSunForecast();
+    updateRecommendations();
+    return weatherService.getCurrentForecast();
+  });
+
+  // Recommendations IPC handlers
+  ipcMain.handle('get-recommendations', async () => {
+    return recommendationService.getCurrentState();
   });
 
   ipcMain.on('close-window', () => {
@@ -289,31 +376,69 @@ function setupIPC() {
   });
 }
 
+function updateRecommendations() {
+  const price = priceService.getCurrentPrice();
+  const hourly = priceService.getHourlyPrices();
+  const sun = weatherService.getCurrentForecast();
+
+  const state = recommendationService.getRecommendations(price, hourly, sun);
+
+  // Send to renderer
+  mainWindow?.webContents.send('recommendations-updated', state);
+
+  // Update tray if we have price data
+  if (price) {
+    updateTray(price);
+  }
+}
+
 app.whenReady().then(async () => {
-  // Initialize price service
+  // Initialize services
   priceService = new PriceService();
+  weatherService = new WeatherService();
+  recommendationService = new RecommendationService();
+
+  // Update weather service with initial location from settings
+  weatherService.updateLocation(priceService.getSettings());
 
   // Set up price update callback
   priceService.onPriceUpdate((data) => {
     updateTray(data);
     mainWindow?.webContents.send('price-updated', data);
+    // Update recommendations when price changes
+    updateRecommendations();
   });
 
   priceService.onHourlyUpdate((data) => {
     mainWindow?.webContents.send('hourly-updated', data);
+    // Update recommendations when hourly data changes
+    updateRecommendations();
+  });
+
+  // Set up weather update callback
+  weatherService.onWeatherUpdate((data) => {
+    mainWindow?.webContents.send('weather-updated', data);
+    // Update recommendations when weather changes
+    updateRecommendations();
   });
 
   createTray();
   createWindow();
   setupIPC();
 
-  // Initial fetch
+  // Initial fetch - prices first, then weather
   await Promise.all([
     priceService.fetchCurrentPrice(),
     priceService.fetchHourlyPrices(),
   ]);
 
-  // Set up periodic refresh (every 5 minutes)
+  // Fetch weather after prices
+  await weatherService.fetchSunForecast();
+
+  // Initial recommendations calculation
+  updateRecommendations();
+
+  // Set up periodic refresh (every 5 minutes for prices)
   setInterval(() => {
     priceService.fetchCurrentPrice();
   }, 5 * 60 * 1000);
@@ -321,6 +446,11 @@ app.whenReady().then(async () => {
   // Fetch hourly prices every 30 minutes
   setInterval(() => {
     priceService.fetchHourlyPrices();
+  }, 30 * 60 * 1000);
+
+  // Fetch weather every 30 minutes
+  setInterval(() => {
+    weatherService.fetchSunForecast();
   }, 30 * 60 * 1000);
 });
 
