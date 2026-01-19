@@ -16,7 +16,8 @@ let mainWindow: BrowserWindow | null = null;
 let priceService: PriceService;
 let lastNotifiedLevel: string | null = null;
 
-const isDev = process.env.NODE_ENV !== 'production' || !app.isPackaged;
+// Use app.isPackaged as the reliable way to detect production vs development
+const isDev = !app.isPackaged;
 
 // Auto-launch settings
 function getLoginItemSettings() {
@@ -168,20 +169,35 @@ function updateTray(data: PriceData) {
 }
 
 function createTray() {
-  const iconPath = getAssetPath('tray-icon.png');
   let icon: NativeImage;
 
   try {
-    icon = nativeImage.createFromPath(iconPath);
+    // Try loading @2x version for Retina displays
+    const icon2xPath = getAssetPath('tray-icon@2x.png');
+    const icon1xPath = getAssetPath('tray-icon.png');
+
+    console.log('Trying to load icon from:', icon2xPath);
+    icon = nativeImage.createFromPath(icon2xPath);
+
     if (icon.isEmpty()) {
-      throw new Error('Icon is empty');
+      console.log('2x icon empty, trying 1x:', icon1xPath);
+      icon = nativeImage.createFromPath(icon1xPath);
     }
-    // Resize for macOS menu bar (should be 22x22 or 16x16)
-    icon = icon.resize({ width: 18, height: 18 });
+
+    if (icon.isEmpty()) {
+      throw new Error('Both icon paths returned empty images');
+    }
+
+    // Resize for macOS menu bar (template image at 16x16 or 18x18)
+    icon = icon.resize({ width: 16, height: 16 });
+    icon.setTemplateImage(true); // Makes it work with dark/light menu bar
   } catch (e) {
     console.error('Failed to load tray icon:', e);
-    // Create a fallback icon
-    icon = nativeImage.createEmpty();
+    // Create a simple fallback icon using data URL
+    const fallbackSvg = `<svg width="16" height="16" xmlns="http://www.w3.org/2000/svg"><circle cx="8" cy="8" r="7" fill="#ffc857"/><path d="M9 3L5 9h3l-1 5 4-6H8l1-5z" fill="#000"/></svg>`;
+    const base64 = Buffer.from(fallbackSvg).toString('base64');
+    icon = nativeImage.createFromDataURL(`data:image/svg+xml;base64,${base64}`);
+    icon = icon.resize({ width: 16, height: 16 });
   }
 
   tray = new Tray(icon);
