@@ -19,6 +19,18 @@ let lastNotifiedLevel: string | null = null;
 
 const isDev = process.env.NODE_ENV !== 'production' || !app.isPackaged;
 
+// Auto-launch settings
+function getLoginItemSettings() {
+  return app.getLoginItemSettings();
+}
+
+function setAutoLaunch(enable: boolean) {
+  app.setLoginItemSettings({
+    openAtLogin: enable,
+    openAsHidden: true, // Start minimized to tray
+  });
+}
+
 function createTrayIcon(level: string, price: number): NativeImage {
   // Create a simple text-based tray icon showing current price
   const canvas = `
@@ -146,35 +158,48 @@ function createTray() {
   tray = new Tray(icon);
   tray.setTitle(' --');
 
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: 'Show Prices',
-      click: () => {
-        if (mainWindow) {
-          positionWindow();
-          mainWindow.show();
-          mainWindow.focus();
-        }
+  const buildContextMenu = () => {
+    const loginSettings = getLoginItemSettings();
+    return Menu.buildFromTemplate([
+      {
+        label: 'Show Prices',
+        click: () => {
+          if (mainWindow) {
+            positionWindow();
+            mainWindow.show();
+            mainWindow.focus();
+          }
+        },
       },
-    },
-    { type: 'separator' },
-    {
-      label: 'Refresh',
-      click: () => {
-        priceService.fetchCurrentPrice();
-        priceService.fetchHourlyPrices();
+      { type: 'separator' },
+      {
+        label: 'Refresh',
+        click: () => {
+          priceService.fetchCurrentPrice();
+          priceService.fetchHourlyPrices();
+        },
       },
-    },
-    { type: 'separator' },
-    {
-      label: 'Quit',
-      click: () => {
-        app.quit();
+      { type: 'separator' },
+      {
+        label: 'Start at Login',
+        type: 'checkbox',
+        checked: loginSettings.openAtLogin,
+        click: (menuItem) => {
+          setAutoLaunch(menuItem.checked);
+          tray?.setContextMenu(buildContextMenu());
+        },
       },
-    },
-  ]);
+      { type: 'separator' },
+      {
+        label: 'Quit',
+        click: () => {
+          app.quit();
+        },
+      },
+    ]);
+  };
 
-  tray.setContextMenu(contextMenu);
+  tray.setContextMenu(buildContextMenu());
 
   tray.on('click', () => {
     if (mainWindow) {
